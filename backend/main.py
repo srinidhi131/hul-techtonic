@@ -5334,9 +5334,10 @@ def create_opportunity_from_analysis(
 
     # Prevent very long AI-generated titles.
 
-    if len(
-        trend
-    ) > 32:
+    if (
+        analysis_source == "live_ai"
+        and len(trend) > 32
+    ):
 
         raise ValueError(
             "AI returned an opportunity name that is too long."
