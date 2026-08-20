@@ -47,7 +47,7 @@ AI_MODEL = os.getenv(
     "gpt-5.4-nano"
 )
 
-AI_MAX_OUTPUT_TOKENS = 220
+AI_MAX_OUTPUT_TOKENS = 320
 
 
 def get_openai_client():
@@ -109,23 +109,18 @@ app.add_middleware(
 # =========================================================
 
 class AISignalAnalysis(BaseModel):
-
-    category: str
-
     hashtag: str
-
+    category: str
     market: str
-
     consumer_need: str
 
+    recommended_brand: str
+    brand_reason: str
+
     trend_velocity: int
-
     brand_relevance: int
-
     consumer_fit: int
-
     sentiment: int
-
     time_sensitivity: int
 
     analysis_rationale: str
@@ -5088,7 +5083,8 @@ def create_custom_opportunity(
 ):
 
     raw_signal = (
-        request.trend.strip()
+        request.trend
+        .strip()
     )
 
 
@@ -5096,9 +5092,7 @@ def create_custom_opportunity(
 
         raise HTTPException(
             status_code=400,
-            detail=(
-                "Trend description cannot be empty."
-            )
+            detail="Trend description cannot be empty."
         )
 
 
@@ -5111,33 +5105,43 @@ def create_custom_opportunity(
         )
 
 
-    except Exception as error:
+        return (
+            create_opportunity_from_analysis(
 
-        raise HTTPException(
-            status_code=503,
-            detail=(
-                "Live AI is currently unavailable. "
-                "Please verify your API key and billing "
-                "configuration, or switch to Demo Mode."
+                raw_signal=
+                    raw_signal,
+
+                analysis=
+                    analysis,
+
+                analysis_source=
+                    "live_ai"
             )
         )
 
 
-    if request.market:
+    except HTTPException:
 
-        analysis[
-            "market"
-        ] = request.market
+        raise
 
 
-    return create_opportunity_from_analysis(
+    except Exception as error:
 
-        raw_signal=raw_signal,
+        print(
+            "[LIVE AI ERROR]",
+            type(error).__name__,
+            str(error)
+        )
 
-        analysis=analysis,
 
-        analysis_source="live_ai"
-    )
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "Live AI could not complete this analysis. "
+                "Please try again or switch to Demo Mode."
+            )
+        )
+
 # =========================================================
 # CREATE CUSTOM OPPORTUNITY FROM NORMALISED ANALYSIS
 # =========================================================
@@ -5148,10 +5152,15 @@ def create_opportunity_from_analysis(
     analysis_source: str
 ):
 
+    # -----------------------------------------------------
+    # CORE ANALYSIS
+    # -----------------------------------------------------
+
     category = (
         analysis[
             "category"
         ]
+        .strip()
     )
 
 
@@ -5159,6 +5168,7 @@ def create_opportunity_from_analysis(
         analysis[
             "market"
         ]
+        .strip()
     )
 
 
@@ -5166,8 +5176,13 @@ def create_opportunity_from_analysis(
         analysis[
             "consumer_need"
         ]
+        .strip()
     )
 
+
+    # -----------------------------------------------------
+    # METRICS
+    # -----------------------------------------------------
 
     scores = {
 
@@ -5198,6 +5213,13 @@ def create_opportunity_from_analysis(
     }
 
 
+    # -----------------------------------------------------
+    # OPPORTUNITY SCORE
+    #
+    # The underlying component scores come from AI.
+    # This only applies the visible weighted framework.
+    # -----------------------------------------------------
+
     scores[
         "opportunity_score"
     ] = calculate_opportunity_score(
@@ -5205,42 +5227,137 @@ def create_opportunity_from_analysis(
     )
 
 
-    brand_info = recommend_brand(
-        category
-    )
-
-
-    recommended_brand = (
-        brand_info[
-            "brand"
-        ]
-    )
-
+    # -----------------------------------------------------
+    # BRAND
+    # -----------------------------------------------------
 
     if (
-        analysis_source == "live_ai"
-        and analysis.get("hashtag")
+        analysis_source
+        == "live_ai"
     ):
 
-        trend = analysis[
-            "hashtag"
-        ]
+        recommended_brand = (
+            analysis[
+                "recommended_brand"
+            ]
+            .strip()
+        )
+
+
+        brand_reason = (
+            analysis[
+                "brand_reason"
+            ]
+            .strip()
+        )
+
+
+        # Live AI owns the recommendation.
+        # Do NOT run deterministic brand matching.
+
+        alternative_brands = []
+
 
     else:
 
-        trend = make_custom_hashtag(
-            raw_signal
+        # Demo Mode remains pre-generated / deterministic.
+
+        brand_info = (
+            recommend_brand(
+                category
+            )
         )
 
-    trend = trend.strip()
 
-    if not trend.startswith("#"):
-        trend = "#" + trend
+        recommended_brand = (
+            brand_info[
+                "brand"
+            ]
+        )
 
-    base_trend = trend
+
+        brand_reason = (
+            brand_info[
+                "reason"
+            ]
+        )
+
+
+        alternative_brands = (
+            deepcopy(
+                CUSTOM_BRAND_ALTERNATIVES.get(
+                    category,
+                    CUSTOM_BRAND_ALTERNATIVES.get(
+                        "unknown",
+                        []
+                    )
+                )
+            )
+        )
+
+
+    # -----------------------------------------------------
+    # OPPORTUNITY NAME
+    # -----------------------------------------------------
+
+    if (
+        analysis_source
+        == "live_ai"
+    ):
+
+        trend = (
+            analysis[
+                "hashtag"
+            ]
+            .strip()
+        )
+
+
+    else:
+
+        trend = (
+            make_custom_hashtag(
+                raw_signal
+            )
+        )
+
+
+    if not trend.startswith(
+        "#"
+    ):
+
+        trend = (
+            "#"
+            + trend
+        )
+
+
+    # Prevent very long AI-generated titles.
+
+    if len(
+        trend
+    ) > 32:
+
+        raise ValueError(
+            "AI returned an opportunity name that is too long."
+        )
+
+
+    # -----------------------------------------------------
+    # UNIQUE TREND ID
+    # -----------------------------------------------------
+
+    base_trend = (
+        trend
+    )
+
     counter = 2
 
-    while trend in PROJECT_STATE:
+
+    while (
+        trend
+        in PROJECT_STATE
+    ):
 
         trend = (
             f"{base_trend}{counter}"
@@ -5248,25 +5365,56 @@ def create_opportunity_from_analysis(
 
         counter += 1
 
-    campaign = build_custom_campaign(
 
-        trend=
-            trend,
+    # -----------------------------------------------------
+    # CAMPAIGN SEED
+    #
+    # AI integration stops after opportunity creation.
+    # Existing downstream workflow remains unchanged.
+    # -----------------------------------------------------
 
-        category=
-            category,
+    campaign = (
+        build_custom_campaign(
 
-        consumer_need=
-            consumer_need,
+            trend=
+                trend,
 
-        brand=
-            recommended_brand
+            category=
+                category,
+
+            consumer_need=
+                consumer_need,
+
+            brand=
+                recommended_brand
+        )
     )
 
+
+    # -----------------------------------------------------
+    # AI RATIONALE
+    # -----------------------------------------------------
+
+    analysis_rationale = (
+        analysis.get(
+            "analysis_rationale",
+            ""
+        )
+        .strip()
+    )
+
+
+    # -----------------------------------------------------
+    # GLOBAL PROJECT STATE
+    # -----------------------------------------------------
 
     PROJECT_STATE[
         trend
     ] = {
+
+        # ---------------------------------------------
+        # LIFECYCLE
+        # ---------------------------------------------
 
         "custom":
             True,
@@ -5283,20 +5431,14 @@ def create_opportunity_from_analysis(
             ).isoformat(),
 
 
+        # ---------------------------------------------
+        # SIGNAL
+        # ---------------------------------------------
+
         "signal": {
 
             "trend":
                 trend,
-
-            "analysis_rationale":
-            analysis.get(
-                "analysis_rationale",
-                (
-                    f"The signal indicates an emerging "
-                    f"{category if category != 'unknown' else 'consumer'} "
-                    f"opportunity centred on {consumer_need.lower()}"
-                )
-            ),
 
             "raw_signal":
                 raw_signal,
@@ -5313,19 +5455,26 @@ def create_opportunity_from_analysis(
             **scores,
 
             "growth":
-                "New signal",
+                "AI assessed",
 
             "window":
-                "24–72h",
+                "Emerging",
+
+            "analysis_rationale":
+                analysis_rationale,
+
+            # Opportunity page currently reads
+            # insight_summary, so feed the AI rationale
+            # directly into that existing field.
 
             "insight_summary":
-                (
-                    f"The signal suggests an emerging "
-                    f"{category if category != 'unknown' else 'cross-category'} "
-                    f"opportunity centred on: {consumer_need}"
-                )
+                analysis_rationale
         },
 
+
+        # ---------------------------------------------
+        # OPPORTUNITY
+        # ---------------------------------------------
 
         "opportunity": {
 
@@ -5336,28 +5485,27 @@ def create_opportunity_from_analysis(
                 recommended_brand,
 
             "brand_reason":
-                brand_info[
-                    "reason"
-                ],
+                brand_reason,
 
             "alternative_brands":
-                deepcopy(
-                    CUSTOM_BRAND_ALTERNATIVES.get(
-                        category,
-                        CUSTOM_BRAND_ALTERNATIVES[
-                            "unknown"
-                        ]
-                    )
-                ),
+                alternative_brands,
 
             "human_override":
                 False
         },
 
 
+        # ---------------------------------------------
+        # CAMPAIGN
+        # ---------------------------------------------
+
         "campaign":
             campaign,
 
+
+        # ---------------------------------------------
+        # LOCALIZATION
+        # ---------------------------------------------
 
         "localization":
             build_custom_localization(
@@ -5372,9 +5520,17 @@ def create_opportunity_from_analysis(
             ),
 
 
+        # ---------------------------------------------
+        # GOVERNANCE
+        # ---------------------------------------------
+
         "governance":
             build_custom_governance(),
 
+
+        # ---------------------------------------------
+        # LAUNCH
+        # ---------------------------------------------
 
         "launch": {
 
@@ -5385,6 +5541,10 @@ def create_opportunity_from_analysis(
                 False
         },
 
+
+        # ---------------------------------------------
+        # AUDIT
+        # ---------------------------------------------
 
         "audit": [
 
@@ -5402,6 +5562,10 @@ def create_opportunity_from_analysis(
         ]
     }
 
+
+    # -----------------------------------------------------
+    # RESPONSE
+    # -----------------------------------------------------
 
     return {
 
@@ -5457,21 +5621,16 @@ def create_opportunity_from_analysis(
             recommended_brand,
 
         "brand_reason":
-            brand_info[
-                "reason"
-            ],
+            brand_reason,
 
         "analysis_source":
             analysis_source,
 
-        "status":
-            "Opportunity created",
-
         "analysis_rationale":
-            analysis.get(
-                "analysis_rationale",
-                ""
-            ),
+            analysis_rationale,
+
+        "status":
+            "Opportunity created"
     }
 
 # =========================================================
@@ -5569,86 +5728,79 @@ def analyse_custom_signal_with_ai(
     client = (
         get_openai_client()
     )
-
-
     prompt = f"""
-You are the consumer intelligence engine inside
+You are the consumer-intelligence engine inside
 HUL's Signal-to-Campaign Studio.
 
-Analyse the consumer signal below.
+Analyse the consumer signal supplied by the marketer
+and convert it into a complete structured opportunity.
 
 CONSUMER SIGNAL:
 {raw_signal}
 
-Your task is ONLY to interpret the signal.
 
-Return:
+=====================================================
+1. OPPORTUNITY NAME
+=====================================================
 
-1. category
-2. market
-3. consumer_need
-4. trend_velocity
-5. brand_relevance
-6. consumer_fit
-7. sentiment
-8. time_sensitivity
-9. hashtag
-10. analysis_rationale
-
-ANALYSIS RATIONALE
-
-Provide a concise explanation of why this signal represents
-a meaningful consumer opportunity.
-
-Rules:
-- Maximum 35 words
-- 1 or 2 sentences only
-- Focus on the consumer behaviour and market relevance
-- Do not expose internal model reasoning
-- Do not mention chain-of-thought
-- Do not invent statistics
-- Do not explain the scoring formula
-
-Hashtag
-
-Create one short, memorable marketing opportunity hashtag.
+Create one short, memorable opportunity hashtag.
 
 Rules:
 - Must begin with #
 - Maximum 24 characters including #
-- 2 to 4 words combined in PascalCase
-- Should capture the consumer behaviour or tension
-- Should sound like a trend HUL marketers would track
-- Do not include HUL or a brand name
-- Avoid generic names such as #EmergingHairCare
+- 2 to 4 words in PascalCase
+- Capture the consumer behaviour, tension or emerging need
+- Should sound like a trend a marketing team would track
+- Do not include an HUL brand name
+- Avoid generic names such as #EmergingTrend
 
 Examples:
 
-Helmet-related scalp freshness
+Helmet-related hair freshness
 → #HelmetHairReset
-
-Simple skincare routines
-→ #SkinRoutineReset
 
 Post-workout hair refresh
 → #PostGymHairRefresh
 
-Humidity and deodorant confidence
-→ #HumidityConfidence
+Portable detergent formats for travel
+→ #TravelLaundryShift
 
-CATEGORY RULES
+Simpler skincare routines
+→ #SkinRoutineReset
 
-category must be exactly one of:
+
+=====================================================
+2. CATEGORY
+=====================================================
+
+Infer the most appropriate consumer-product category.
+
+Do NOT restrict yourself to beauty and personal care.
+
+Examples of valid categories include:
 
 haircare
-deodorant
 skincare
-unknown
+deodorant
+beauty
+fabric care
+home care
+oral care
+nutrition
+foods
+personal care
+
+Use a concise lowercase category name.
+
+Choose the category based on the underlying consumer need,
+not simple keyword matching.
 
 
-MARKET RULES
+=====================================================
+3. MARKET
+=====================================================
 
-Infer the most appropriate Indian market.
+Infer the most appropriate Indian market or geography.
 
 Examples:
 
@@ -5656,61 +5808,163 @@ India
 Urban India
 Metro India
 South India
+North India
+Coastal Urban India
 Kerala
 Tamil Nadu
 Karnataka Urban
-Coastal Urban India
+
+If the signal does not provide enough geographic evidence,
+use "India".
+
+Do not invent geographic specificity.
 
 
-CONSUMER NEED
+=====================================================
+4. CONSUMER NEED
+=====================================================
 
 Describe the underlying consumer need.
 
-Maximum 18 words.
+Rules:
+- Maximum 18 words
+- Focus on the actual consumer problem or tension
+- Do not mention an HUL brand
+- Do not describe a campaign
+- Do not invent statistics
 
-Do not:
-- recommend a campaign
-- mention HUL
-- mention a brand
-- invent statistics
+
+=====================================================
+5. HUL BRAND MATCHING
+=====================================================
+
+Recommend the single HUL brand best positioned to respond
+to the opportunity.
+
+Relevant HUL brands may include, but are not limited to:
+
+Sunsilk
+Dove
+TRESemmé
+Pond's
+Lakmé
+Rexona
+Surf Excel
+Comfort
+Vim
+Pepsodent
+Closeup
+Horlicks
+Kissan
+
+Choose based on category, consumer need, brand relevance
+and natural portfolio fit.
+
+Do not simply match keywords.
+
+If no HUL brand has a credible fit, use:
+
+"HUL Portfolio Review"
+
+Do not force a brand recommendation.
+
+Return:
+
+recommended_brand
+brand_reason
+
+brand_reason rules:
+- Maximum 25 words
+- Explain why this brand is strategically relevant
+- Do not claim access to confidential HUL strategy
 
 
-SCORING
+=====================================================
+6. OPPORTUNITY METRICS
+=====================================================
 
-Every score must be an integer from 0 to 100.
+Return integer scores from 0 to 100.
 
 trend_velocity:
-How quickly the described consumer behaviour appears
-capable of gaining momentum.
+How quickly this described behaviour could plausibly gain momentum.
 
 brand_relevance:
-How actionable the signal is for an HUL beauty or
-personal-care brand.
+How strongly the opportunity connects to the recommended HUL brand.
 
 consumer_fit:
-How clearly the signal reflects a real consumer tension
-or unmet need.
+How clearly the signal reflects a meaningful consumer need.
 
 sentiment:
-How favourable/actionable the underlying consumer
-conversation appears.
+How favourable and actionable the underlying consumer conversation appears.
 50 means neutral.
 
 time_sensitivity:
-How quickly the opportunity may lose relevance if
-a brand waits too long.
+How quickly the opportunity may lose relevance if the brand waits.
+
+
+SCORING GUIDANCE
+
+90–100 = exceptional
+75–89 = strong
+60–74 = moderate
+40–59 = weak
+0–39 = very weak
+
+Be conservative.
+
+Do not automatically assign high scores.
+
+Do not claim these scores come from measured social-listening data.
+They are AI assessments of the supplied signal.
+
+
+=====================================================
+7. ANALYSIS RATIONALE
+=====================================================
+
+Explain why the signal represents a meaningful consumer
+and brand opportunity.
+
+Rules:
+- Maximum 35 words
+- 1 or 2 sentences
+- Explain the underlying behaviour or tension
+- Explain why it could matter to the recommended brand
+- Do not expose internal chain-of-thought
+- Do not invent statistics
+
+
+=====================================================
+RETURN THESE FIELDS
+=====================================================
+
+hashtag
+category
+market
+consumer_need
+recommended_brand
+brand_reason
+trend_velocity
+brand_relevance
+consumer_fit
+sentiment
+time_sensitivity
+analysis_rationale
 
 
 IMPORTANT
 
-Be conservative.
+You are interpreting only the signal supplied by the user.
 
-Do not give every trend scores above 85.
+You are NOT claiming to have:
+- performed live social listening
+- measured actual search volume
+- observed real sales data
+- accessed confidential HUL strategy
 
-You are interpreting the signal supplied by the user.
-You are NOT claiming to have performed live social
-listening or market measurement.
+Return only the structured result required by the schema.
 """
+
 
 
     response = (
@@ -5760,27 +6014,28 @@ listening or market measurement.
             "The model returned no structured analysis."
         )
 
+    if not result.category.strip():
 
+        raise ValueError(
+            "AI returned an empty category."
+        )
+
+
+    if not result.recommended_brand.strip():
+
+        raise ValueError(
+            "AI returned an empty brand recommendation."
+        )
+
+
+    if not result.hashtag.strip():
+
+        raise ValueError(
+            "AI returned an empty opportunity name."
+        )
     # -----------------------------------------------------
     # SERVER-SIDE VALIDATION
     # -----------------------------------------------------
-
-    allowed_categories = {
-        "haircare",
-        "deodorant",
-        "skincare",
-        "unknown"
-    }
-
-
-    if (
-        result.category
-        not in allowed_categories
-    ):
-
-        raise ValueError(
-            "AI returned an unsupported category."
-        )
 
 
     score_fields = [
@@ -5803,6 +6058,8 @@ listening or market measurement.
 
 
     return {
+        "hashtag":
+            result.hashtag,
 
         "category":
             result.category,
@@ -5812,6 +6069,12 @@ listening or market measurement.
 
         "consumer_need":
             result.consumer_need,
+
+        "recommended_brand":
+            result.recommended_brand,
+
+        "brand_reason":
+            result.brand_reason,
 
         "trend_velocity":
             result.trend_velocity,
@@ -5828,114 +6091,12 @@ listening or market measurement.
         "time_sensitivity":
             result.time_sensitivity,
 
-        "analysis_source":
-            "live_ai",
-
-        "hashtag": result.hashtag,
-
         "analysis_rationale":
-        result.analysis_rationale,
+            result.analysis_rationale,
 
         "analysis_source":
             "live_ai"
     }
-
-# =========================================================
-# LIVE AI WITH DETERMINISTIC FALLBACK
-# =========================================================
-
-def analyse_custom_signal_safely(
-    raw_signal: str
-):
-
-    try:
-
-        return (
-            analyse_custom_signal_with_ai(
-                raw_signal
-            )
-        )
-
-
-    except Exception as error:
-
-        print(
-            "[LIVE AI FALLBACK]",
-            type(error).__name__,
-            str(error)
-        )
-
-
-        category = (
-            infer_custom_category(
-                raw_signal
-            )
-        )
-
-
-        market = (
-            infer_custom_market(
-                raw_signal
-            )
-        )
-
-
-        consumer_need = (
-            infer_custom_need(
-                raw_signal,
-                category
-            )
-        )
-
-
-        scores = (
-            build_custom_scores(
-                raw_signal,
-                category
-            )
-        )
-
-
-        return {
-
-            "category":
-                category,
-
-            "market":
-                market,
-
-            "consumer_need":
-                consumer_need,
-
-            "trend_velocity":
-                scores[
-                    "trend_velocity"
-                ],
-
-            "brand_relevance":
-                scores[
-                    "brand_relevance"
-                ],
-
-            "consumer_fit":
-                scores[
-                    "consumer_fit"
-                ],
-
-            "sentiment":
-                scores[
-                    "sentiment"
-                ],
-
-            "time_sensitivity":
-                scores[
-                    "time_sensitivity"
-                ],
-
-            "analysis_source":
-                "fallback"
-            
-        }
 
 @app.get("/health")
 def health():
