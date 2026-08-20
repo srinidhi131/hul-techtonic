@@ -82,100 +82,109 @@ export default async function OpportunityPage({
   // =====================================================
 
   if (!selected) {
-    return (
-      <main className="min-h-screen">
-        <div className="page-shell">
-          <TopNav />
-          <WorkflowProgress active="insight" />
+  return (
+    <main className="min-h-screen">
+      <div className="page-shell">
 
-          <div className="panel mt-20 rounded-[22px] p-10 text-center">
+        <TopNav />
 
-            <div className="text-[24px] font-semibold">
-              Opportunity not found
-            </div>
+        <WorkflowProgress
+          active="insight"
+        />
 
-            <div
-  className="
-    flex
-    items-center
-    justify-between
-    gap-4
-  "
->
-
-  <Link
-    href="/explore"
-    className="
-      inline-flex
-      items-center
-      gap-2
-      text-[12px]
-      text-[#7F8492]
-      transition
-      hover:text-[#D3D5DD]
-    "
-  >
-    <ArrowLeft
-      size={14}
-    />
-
-    Opportunity Radar
-  </Link>
-
-
-  <DeleteOpportunity
-    trend={
-      selected.trend
-    }
-    custom={
-      selected.custom ??
-      false
-    }
-    approved={
-      selected.approved ??
-      false
-    }
-  />
-
-</div>
-
+        <div
+          className="
+            panel
+            mt-20
+            rounded-[22px]
+            p-10
+            text-center
+          "
+        >
+          <div
+            className="
+              text-[24px]
+              font-semibold
+              text-[#F4F5F8]
+            "
+          >
+            Opportunity not found
           </div>
+
+          <p
+            className="
+              mt-3
+              text-[12px]
+              text-[#7F8492]
+            "
+          >
+            This opportunity may have been deleted
+            or is no longer available.
+          </p>
+
+          <Link
+            href="/explore"
+            className="
+              mt-6
+              inline-flex
+              items-center
+              gap-2
+              rounded-xl
+              border
+              border-white/[0.07]
+              bg-white/[0.02]
+              px-4
+              py-3
+              text-[11px]
+              text-[#B7BAC4]
+              transition
+              hover:bg-white/[0.04]
+              hover:text-white
+            "
+          >
+            <ArrowLeft size={14} />
+
+            Return to Opportunity Radar
+          </Link>
+
         </div>
-      </main>
-    );
-  }
+
+      </div>
+    </main>
+  );
+}
 
 
   // =====================================================
   // SCORE BREAKDOWN
   // =====================================================
 
-  const scoreItems = [
-    [
-      "Trend velocity",
-      selected.trend_velocity,
-    ],
+  const scoreItems: [string, number][] = [
+  [
+    "Trend velocity",
+    selected.trend_velocity ?? 0,
+  ],
 
-    [
-      "Brand relevance",
-      selected.brand_relevance,
-    ],
+  [
+    "Brand relevance",
+    selected.brand_relevance ?? 0,
+  ],
 
-    [
-      "Consumer fit",
-      selected.consumer_fit,
-    ],
+  [
+    "Consumer fit",
+    selected.consumer_fit ?? 0,
+  ],
 
-    [
-      "Sentiment strength",
-      selected.sentiment,
-    ],
+  [
+    "Sentiment strength",
+    selected.sentiment ?? 0,
+  ],
 
-    [
-      "Time sensitivity",
-      selected.time_sensitivity,
-    ],
-  ] as const;
+  [
+    "Time sensitivity",
+    selected.time_sensitivity ?? 0,
+  ],
+];
 
   const BRAND_ALTERNATIVES: Record<
     string,

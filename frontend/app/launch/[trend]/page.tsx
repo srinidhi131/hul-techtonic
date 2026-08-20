@@ -130,7 +130,7 @@ export default function LaunchPage() {
           await fetch(
             `${API_BASE}/launch/${encodeURIComponent(
               trend
-            )}?from=radar`
+            )}`
           );
 
 
@@ -393,27 +393,31 @@ export default function LaunchPage() {
 
   if (!data) {
 
-    return (
-      <main className="min-h-screen">
+  return (
+    <main className="min-h-screen">
 
-        <div className="page-shell">
+      <div className="page-shell">
 
-          <TopNav />
-          <WorkflowProgress active="launch" completed={data.activated}/>
+        <TopNav />
 
-          <div className="py-32 text-center">
+        <WorkflowProgress
+          active="launch"
+          completed={false}
+        />
 
-            <div className="text-[14px] text-rose-300">
-              {error}
-            </div>
+        <div className="py-32 text-center">
 
+          <div className="text-[14px] text-rose-300">
+            {error || "Could not load campaign activation."}
           </div>
 
         </div>
 
-      </main>
-    );
-  }
+      </div>
+
+    </main>
+  );
+}
 
 
   /* =====================================================

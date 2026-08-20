@@ -1,12 +1,16 @@
-import SignalCard from "@/components/SignalCard";
+import SignalCard, {
+  type Signal,
+} from "@/components/SignalCard";
+
 import TopNav from "@/components/TopNav";
+import WorkflowProgress from "@/components/WorkflowProgress";
 
 import { getSignals } from "@/lib/api";
-import WorkflowProgress from "@/components/WorkflowProgress";
+
 
 export default async function ExplorePage() {
 
-  let signals = [];
+  let signals: Signal[] = [];
 
 
   try {
@@ -23,7 +27,7 @@ export default async function ExplorePage() {
 
   const activeCount =
     signals.filter(
-      (signal: any) =>
+      (signal) =>
         signal.activated
     ).length;
 
@@ -39,7 +43,11 @@ export default async function ExplorePage() {
       <div className="page-shell">
 
         <TopNav />
-        <WorkflowProgress active="signal" />
+
+        <WorkflowProgress
+          active="signal"
+        />
+
 
         <section
           className="
@@ -169,8 +177,7 @@ export default async function ExplorePage() {
               SIGNAL GRID
               =============================================== */}
 
-          {signals.length >
-            0 ? (
+          {signals.length > 0 ? (
 
             <div
               className="
@@ -183,9 +190,7 @@ export default async function ExplorePage() {
             >
 
               {signals.map(
-                (
-                  signal: any
-                ) => (
+                (signal) => (
 
                   <SignalCard
                     key={
