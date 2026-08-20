@@ -400,32 +400,56 @@ export default function AnalysePage() {
       );
 
 
-      const request =
-        fetch(
-          `${API_BASE}/analyse/custom`,
-          {
-            method:
-              "POST",
-
-            headers: {
-              "Content-Type":
-                "application/json"
-            },
-
-            body:
-              JSON.stringify({
-                trend:
-                  signal
-              })
-          }
-        );
+      let request: Promise<Response>;
 
 
-      await runAnalysisAnimation();
+if (mode === "demo") {
+
+  if (!selectedScenario) {
+    throw new Error(
+      "Please select a demo scenario."
+    );
+  }
 
 
-      const response =
-        await request;
+  request =
+    fetch(
+      `${API_BASE}/analyse/demo/${encodeURIComponent(
+        selectedScenario
+      )}`,
+      {
+        method: "POST"
+      }
+    );
+
+} else {
+
+  request =
+    fetch(
+      `${API_BASE}/analyse/custom`,
+      {
+        method: "POST",
+
+        headers: {
+          "Content-Type":
+            "application/json"
+        },
+
+        body:
+          JSON.stringify({
+            trend:
+              signal
+          })
+      }
+    );
+}
+
+
+await runAnalysisAnimation();
+
+
+const response =
+  await request;
 
 
       if (
