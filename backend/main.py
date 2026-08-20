@@ -88,7 +88,7 @@ app.add_middleware(
     allow_origins=[
         "http://localhost:3000",
         "http://127.0.0.1:3000",
-        
+
     ],
 
     allow_credentials=True,
@@ -5228,8 +5228,7 @@ def create_opportunity_from_analysis(
     else:
 
         trend = make_custom_hashtag(
-            raw_signal,
-            category
+            raw_signal
         )
 
     trend = trend.strip()
